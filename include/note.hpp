@@ -29,9 +29,16 @@ private:
     std::unordered_map<std::string, std::vector<std::string>> children;
 public:
     NoteDataManager() {
-        std::ifstream file("notes.json");
+        if (!load_json_file("notes.json")) {
+            generate_default();
+        }
+    }
+
+    bool load_json_file(std::string json_file) {
+        std::ifstream file(json_file);
         if (!file.is_open()) {
-            std::cerr << "Failed to open file.\n";
+            std::cerr << "Failed to open file: " << json_file << "\n";
+            return false;
         }
 
         nlohmann::json j;
@@ -39,6 +46,7 @@ public:
             file >> j;
         } catch (const nlohmann::json::parse_error& e) {
             std::cerr << "Parse error: " << e.what() << '\n';
+            return false;
         }
 
         for (const auto& note : j) {
@@ -50,6 +58,15 @@ public:
                 children[tag].emplace_back(title);
             }
         }
+
+        return true;
+    }
+
+    void generate_default() {
+        std::string title = "NoteWiki";
+        std::vector<std::string> tags = {"default"};
+        std::string content = "This is the NoteWiki app.\n  Tag any note 'default' to show them on startup.";
+        add_note(title, tags, content);
     }
 
     Note get_note(std::string title, bool visible = false) {
@@ -64,5 +81,14 @@ public:
             offspring = search->second;
         }
         return {title, content, tags, offspring, visible};
+    }
+
+    void add_note(std::string title,
+                  std::vector<std::string> tags,
+                  std::string content) {
+        data[title] = {content, tags};
+        for (const auto& tag : tags) {
+            children[tag].emplace_back(title);
+        }
     }
 };
