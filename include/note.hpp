@@ -9,6 +9,8 @@
 
 #include <nlohmann/json.hpp>
 
+#include "logger.h"
+
 struct Note {
     std::string title;
     std::string content;
@@ -37,7 +39,7 @@ public:
     bool load_json_file(std::string json_file) {
         std::ifstream file(json_file);
         if (!file.is_open()) {
-            std::cerr << "Failed to open file: " << json_file << "\n";
+            LOG_ERROR() << "Failed to open file: " << json_file;
             return false;
         }
 
@@ -45,7 +47,7 @@ public:
         try {
             file >> j;
         } catch (const nlohmann::json::parse_error& e) {
-            std::cerr << "Parse error: " << e.what() << '\n';
+            LOG_ERROR() << "Parse error: " << e.what();
             return false;
         }
 

@@ -1,5 +1,11 @@
 cmake_minimum_required(VERSION 3.22)
+
 project(notewiki LANGUAGES CXX)
+
+# Global defaults (apply to targets created later)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Options so we can later add/remove viewers
 option(NOTEWIKI_BUILD_CLI "Build CLI viewer" ON)
@@ -10,6 +16,11 @@ add_library(notewiki INTERFACE)
 target_include_directories(notewiki INTERFACE
     ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_compile_features(notewiki INTERFACE cxx_std_20)
+
+add_library(utilities INTERFACE)
+target_include_directories(utilities INTERFACE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/utilities)
+target_compile_features(utilities INTERFACE cxx_std_20)
 
 ### add the third party json library
 add_library(nlohmann_json INTERFACE)
@@ -23,5 +34,26 @@ target_link_libraries(notewiki INTERFACE nlohmann_json::nlohmann_json)
 
 if (NOTEWIKI_BUILD_CLI)
   add_executable(notewiki_cli apps/cli_viewer/main.cpp)
+  target_link_libraries(notewiki_cli PRIVATE utilities)
   target_link_libraries(notewiki_cli PRIVATE notewiki)
 endif()
+
+## add tests
+find_package(Threads REQUIRED)
+# add google test
+include(FetchContent)
+FetchContent_Declare(
+  gtest
+  GIT_REPOSITORY https://github.com/google/googletest.git
+  GIT_TAG v1.17.0
+)
+FetchContent_MakeAvailable(gtest)
+
+enable_testing()
+
+add_executable(utility_tests
+  tests/utilities/test_color.cpp
+  tests/utilities/test_logger.cpp)
+target_link_libraries(utility_tests PRIVATE utilities)
+target_link_libraries(utility_tests PRIVATE GTest::gtest GTest::gtest_main)
+add_test(NAME utility_tests COMMAND utility_tests)
