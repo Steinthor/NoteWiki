@@ -96,6 +96,14 @@ public:
     }
 };
 
+#ifdef LOGGER_TEST_HOOKS
+using LogTestObserver = void(*)(const LogMessage&);
+inline std::atomic<LogTestObserver> g_testObserver{nullptr}; // internal linkage
+inline void setLogTestObserver(LogTestObserver cb) {
+    g_testObserver.store(cb, std::memory_order_release);
+}
+#endif
+
 // Logger class is a singleton, so should only be constructed once.
 // default: logging to console: true, logging to file: false.
 // * The processing of the logs is in its own thread so as not to delay other threads
@@ -246,6 +254,9 @@ private:
                     const std::string& message) {
         std::thread::id thread_id = std::this_thread::get_id();
         LogMessage msg{level, timestamp, message, thread_id};
+#ifdef LOGGER_TEST_HOOKS
+        if (auto cb = g_testObserver.load(std::memory_order_acquire)) cb(msg);
+#endif
         std::lock_guard<std::mutex> lock(queueMtx);
         logQueue.emplace(msg);
         queueCv.notify_one();

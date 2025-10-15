@@ -32,6 +32,7 @@ target_include_directories(nlohmann_json SYSTEM INTERFACE
 add_library(nlohmann_json::nlohmann_json ALIAS nlohmann_json)
 target_link_libraries(notewiki INTERFACE nlohmann_json::nlohmann_json)
 
+# build the CLI app
 if (NOTEWIKI_BUILD_CLI)
   add_executable(notewiki_cli apps/cli_viewer/main.cpp)
   target_link_libraries(notewiki_cli PRIVATE utilities)
@@ -51,9 +52,22 @@ FetchContent_MakeAvailable(gtest)
 
 enable_testing()
 
-add_executable(utility_tests
+# We want tests with and without NDEBUG flag
+# Common test sources
+set(UTILITY_TEST_SOURCES
   tests/utilities/test_color.cpp
-  tests/utilities/test_logger.cpp)
-target_link_libraries(utility_tests PRIVATE utilities)
-target_link_libraries(utility_tests PRIVATE GTest::gtest GTest::gtest_main)
+  tests/utilities/test_logger.cpp
+  tests/utilities/test_logger_fixture.cpp
+)
+
+# Debug-flavored tests (no NDEBUG)
+add_executable(utility_tests ${UTILITY_TEST_SOURCES})
+target_link_libraries(utility_tests PRIVATE utilities GTest::gtest_main)
+target_compile_definitions(utility_tests PRIVATE LOGGER_TEST_HOOKS)
 add_test(NAME utility_tests COMMAND utility_tests)
+
+# Release-flavored tests (with NDEBUG)
+add_executable(utility_tests_release ${UTILITY_TEST_SOURCES})
+target_link_libraries(utility_tests_release PRIVATE utilities GTest::gtest_main)
+target_compile_definitions(utility_tests_release PRIVATE NDEBUG LOGGER_TEST_HOOKS)
+add_test(NAME utility_tests_release COMMAND utility_tests_release)

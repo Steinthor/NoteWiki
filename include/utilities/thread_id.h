@@ -8,7 +8,7 @@
 #define BUFFER_SIZE 1024
 
 // Function to convert a thread ID to a hexadecimal string
-std::string thread_id_to_hex(std::thread::id thread_id = std::this_thread::get_id(), const size_t num_bits = 16) {
+inline  std::string thread_id_to_hex(std::thread::id thread_id = std::this_thread::get_id(), const size_t num_bits = 16) {
     // Convert the thread ID to an unsigned long long for manipulation
     auto thread_id_value = std::hash<std::thread::id>{}(thread_id);
 
