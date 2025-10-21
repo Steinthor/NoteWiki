@@ -1,13 +1,15 @@
 #include "note.hpp"
+#include "options.h"
 
 class CliViewer {
 private:
-    std::string app_name{"NoteWiki 0.0"};
+    Options opts_;
     NoteDataManager noteDataManager;
     std::vector<Note> visible;
     std::string input;
 public:
-    CliViewer() {
+    CliViewer(Options opts) : opts_(std::move(opts)),
+                              noteDataManager(NoteDataManager(opts_.storage_path)) {
         Note default_note = noteDataManager.get_note("default");
         for (const auto& kid : default_note.children) {
             visible.emplace_back(noteDataManager.get_note(kid));

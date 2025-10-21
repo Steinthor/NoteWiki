@@ -30,8 +30,8 @@ private:
     std::unordered_map<std::string, NoteData> data;
     std::unordered_map<std::string, std::vector<std::string>> children;
 public:
-    NoteDataManager() {
-        if (!load_json_file("notes.json")) {
+    NoteDataManager(std::string storage_path) {
+        if (!load_json_file(storage_path)) {
             generate_default();
         }
     }

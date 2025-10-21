@@ -23,6 +23,11 @@ target_include_directories(utilities INTERFACE
 target_compile_features(utilities INTERFACE cxx_std_20)
 
 #
+# add the third party library cxxopts
+#
+add_subdirectory(third_party/cxxopts)
+
+#
 # add the third party json library
 #
 add_library(nlohmann_json INTERFACE)
@@ -91,7 +96,7 @@ target_link_libraries(imgui PUBLIC glfw::glfw OpenGL::GL)
 #
 if (NOTEWIKI_BUILD_CLI)
   add_executable(notewiki_cli apps/cli_viewer/main.cpp)
-  target_link_libraries(notewiki_cli PRIVATE notewiki utilities)
+  target_link_libraries(notewiki_cli PRIVATE notewiki utilities cxxopts)
 endif()
 
 #
@@ -114,7 +119,7 @@ if (NOTEWIKI_BUILD_IMGUI)
   )
 
   add_executable(notewiki_ui apps/imgui_viewer/main.cpp)
-  target_link_libraries(notewiki_ui PRIVATE notewiki utilities imgui glfw::glfw)
+  target_link_libraries(notewiki_ui PRIVATE notewiki utilities imgui glfw::glfw cxxopts)
   add_dependencies(notewiki_ui copy_fonts)
 endif()
 

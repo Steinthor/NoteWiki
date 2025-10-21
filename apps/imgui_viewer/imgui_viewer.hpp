@@ -1,4 +1,5 @@
 #include "note.hpp"
+#include "options.h"
 
 #include "imgui.h"
 #include "backends/imgui_impl_glfw.h"
@@ -7,7 +8,7 @@
 
 class ImGuiViewer {
 private:
-    std::string app_name{"NoteWiki 0.0"};
+    Options opts_;
     GLFWwindow* window{nullptr};
     NoteDataManager noteDataManager;
     std::map<uint32_t, Note> visible;
@@ -15,7 +16,8 @@ private:
     ImFont* font_regular;
     ImFont* font_title;
 public:
-    ImGuiViewer() {
+    ImGuiViewer(Options opts) : opts_(std::move(opts)),
+                                noteDataManager(NoteDataManager(opts_.storage_path)) {
         Note default_note = noteDataManager.get_note("default");
         int count = 0;
         for (const auto& kid : default_note.children) {
@@ -31,7 +33,7 @@ public:
             return -1;
 
         const char* glsl_version = "#version 130";
-        window = glfwCreateWindow(800, 600, app_name.c_str(), nullptr, nullptr);
+        window = glfwCreateWindow(800, 600, opts_.app_name.c_str(), nullptr, nullptr);
         if (!window) {
             glfwTerminate();
             return -1;
@@ -160,6 +162,7 @@ public:
     int run() {
         if (setup() != 0) return -1;
 
+        // The active loop that is always running and re-rendering the UI
         while (!glfwWindowShouldClose(window)) {
             glfwPollEvents();
             ImGui_ImplOpenGL3_NewFrame();
