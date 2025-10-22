@@ -9,6 +9,11 @@ int main(int argc, char* argv[]) {
         if (!parsed.error.empty()) std::cout << parsed.error << "\n";
         return parsed.exit_code;
     }
+
+    Logger& log = Logger::getInstance();
+    if (parsed.value->verbose) log.setLogLevel(LogLevel::INFO);
+    LOG_INFO() << "Starting ui";
+
     ImGuiViewer viewer(*parsed.value);
 
     return viewer.run();

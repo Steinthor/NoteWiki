@@ -7,6 +7,9 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# a debug flag for debug logs
+set(ENABLE_DEBUG OFF)
+
 # Options so we can later add/remove viewers
 option(NOTEWIKI_BUILD_CLI "Build CLI viewer" ON)
 option(NOTEWIKI_BUILD_IMGUI "Build ImGui viewer" ON)
@@ -97,6 +100,9 @@ target_link_libraries(imgui PUBLIC glfw::glfw OpenGL::GL)
 if (NOTEWIKI_BUILD_CLI)
   add_executable(notewiki_cli apps/cli_viewer/main.cpp)
   target_link_libraries(notewiki_cli PRIVATE notewiki utilities cxxopts)
+  if(ENABLE_DEBUG)
+    target_compile_definitions(notewiki_cli PRIVATE DEBUGGING)
+  endif()
 endif()
 
 #
@@ -121,6 +127,9 @@ if (NOTEWIKI_BUILD_IMGUI)
   add_executable(notewiki_ui apps/imgui_viewer/main.cpp)
   target_link_libraries(notewiki_ui PRIVATE notewiki utilities imgui glfw::glfw cxxopts)
   add_dependencies(notewiki_ui copy_fonts)
+  if(ENABLE_DEBUG)
+    target_compile_definitions(notewiki_ui PRIVATE DEBUGGING)
+  endif()
 endif()
 
 #
@@ -138,7 +147,7 @@ FetchContent_MakeAvailable(gtest)
 
 enable_testing()
 
-# We want tests with and without NDEBUG flag
+# We want tests with and without DEBUG flag
 # Common test sources
 set(UTILITY_TEST_SOURCES
   tests/utilities/test_color.cpp
@@ -146,14 +155,14 @@ set(UTILITY_TEST_SOURCES
   tests/utilities/test_logger_fixture.cpp
 )
 
-# Debug-flavored tests (no NDEBUG)
+# Debug-flavored tests (with DEBUGGING)
 add_executable(utility_tests ${UTILITY_TEST_SOURCES})
 target_link_libraries(utility_tests PRIVATE utilities GTest::gtest_main)
-target_compile_definitions(utility_tests PRIVATE LOGGER_TEST_HOOKS)
+target_compile_definitions(utility_tests PRIVATE DEBUGGING LOGGER_TEST_HOOKS)
 add_test(NAME utility_tests COMMAND utility_tests)
 
-# Release-flavored tests (with NDEBUG)
+# Release-flavored tests (no DEBUGGING)
 add_executable(utility_tests_release ${UTILITY_TEST_SOURCES})
 target_link_libraries(utility_tests_release PRIVATE utilities GTest::gtest_main)
-target_compile_definitions(utility_tests_release PRIVATE NDEBUG LOGGER_TEST_HOOKS)
+target_compile_definitions(utility_tests_release PRIVATE LOGGER_TEST_HOOKS)
 add_test(NAME utility_tests_release COMMAND utility_tests_release)

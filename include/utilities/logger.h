@@ -20,7 +20,7 @@
 #include "color.h"              // for terminal colors.
 
 // an enum for various levels of logging
-enum LogLevel {
+enum struct LogLevel : uint8_t {
     ERROR,
     WARNING,
     INFO,
@@ -228,6 +228,8 @@ public:
         queueCv.wait(lock, [this] { return logQueue.empty(); });
     }
 
+    void setLogLevel(LogLevel lvl) noexcept { loglevel_ = lvl; }
+
 private:
     Logger() : logToConsole(true),
                logToFile(false),
@@ -417,21 +419,21 @@ private:
     }
 
     bool isLoggingLevel(LogLevel level) const {
-#ifdef NDEBUG
-        if (level == DEBUG) {
+#ifdef DEBUGGING
+        if (level == LogLevel::DEBUG) {
             return false;
         }
 #endif
-        return true;
+        return (level <= loglevel_ ? true : false);
     }
 
     // Helper function to return the log level color.
     std::string_view logLevelToColor(LogLevel level) const {
         switch (level) {
-            case DEBUG: return color::GREY;
-            case INFO: return color::WHITE;
-            case WARNING: return color::YELLOW;
-            case ERROR: return color::RED;
+            case LogLevel::DEBUG: return color::GREY;
+            case LogLevel::INFO: return color::WHITE;
+            case LogLevel::WARNING: return color::YELLOW;
+            case LogLevel::ERROR: return color::RED;
             default: return "";
         }
     }
@@ -440,10 +442,10 @@ private:
     std::string logLevelToString(LogLevel level) const {
         std::ostringstream oss;
         switch (level) {
-            case DEBUG: oss << "DEBUG"; break;
-            case INFO: oss << "INFO"; break;
-            case WARNING: oss << "WARNING"; break;
-            case ERROR: oss << "ERROR"; break;
+            case LogLevel::DEBUG: oss << "DEBUG"; break;
+            case LogLevel::INFO: oss << "INFO"; break;
+            case LogLevel::WARNING: oss << "WARNING"; break;
+            case LogLevel::ERROR: oss << "ERROR"; break;
             default: break;
         }
         return oss.str();
@@ -453,6 +455,7 @@ private:
     std::atomic<bool> logToConsole;
     std::atomic<bool> logToFile;
     std::atomic<bool> logToServer;
+    std::atomic<LogLevel> loglevel_ = {LogLevel::WARNING};
     std::ofstream fileStream;
     std::string filename;
     ThreadSafePriorityQueue<LogMessage> logQueue;
@@ -467,11 +470,11 @@ private:
 };
 
 // logging macros
-#define LOG_ERROR() Logger::getInstance().log(ERROR)
-#define LOG_WARNING() Logger::getInstance().log(WARNING)
-#define LOG_INFO() Logger::getInstance().log(INFO)
-#ifdef NDEBUG
-    #define LOG_DEBUG() if (false) Logger::getInstance().log(DEBUG)
+#define LOG_ERROR() Logger::getInstance().log(LogLevel::ERROR)
+#define LOG_WARNING() Logger::getInstance().log(LogLevel::WARNING)
+#define LOG_INFO() Logger::getInstance().log(LogLevel::INFO)
+#ifdef DEBUGGING
+    #define LOG_DEBUG() Logger::getInstance().log(LogLevel::DEBUG)
 #else
-    #define LOG_DEBUG() Logger::getInstance().log(DEBUG)
+    #define LOG_DEBUG() if (false) Logger::getInstance().log(LogLevel::DEBUG)
 #endif
