@@ -421,7 +421,7 @@ private:
     bool isLoggingLevel(LogLevel level) const {
 #ifdef DEBUGGING
         if (level == LogLevel::DEBUG) {
-            return false;
+            return true;
         }
 #endif
         return (level <= loglevel_ ? true : false);

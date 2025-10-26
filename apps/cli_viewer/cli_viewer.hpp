@@ -1,6 +1,8 @@
 #include "note.hpp"
 #include "options.h"
 
+using namespace note;
+
 class CliViewer {
 private:
     Options opts_;

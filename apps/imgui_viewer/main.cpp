@@ -12,9 +12,9 @@ int main(int argc, char* argv[]) {
 
     Logger& log = Logger::getInstance();
     if (parsed.value->verbose) log.setLogLevel(LogLevel::INFO);
-    LOG_INFO() << "Starting ui";
 
     ImGuiViewer viewer(*parsed.value);
 
+    LOG_INFO() << "Starting ui";
     return viewer.run();
 }

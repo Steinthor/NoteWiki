@@ -2,9 +2,12 @@
 #include "options.h"
 
 #include "imgui.h"
+#include "misc/cpp/imgui_stdlib.h"
 #include "backends/imgui_impl_glfw.h"
 #include "backends/imgui_impl_opengl3.h"
 #include <GLFW/glfw3.h>
+
+using namespace note;
 
 class ImGuiViewer {
 private:
@@ -13,8 +16,12 @@ private:
     NoteDataManager noteDataManager;
     std::map<uint32_t, Note> visible;
     std::unordered_set<std::string> in_visible;
+    using visible_iterator = std::map<uint32_t, Note>::iterator;
     ImFont* font_regular;
     ImFont* font_title;
+    EditingNote editNote;
+    bool editMode = false;
+    ImVec2 contentEditSize {-FLT_MIN, 30};
 public:
     ImGuiViewer(Options opts) : opts_(std::move(opts)),
                                 noteDataManager(NoteDataManager(opts_.storage_path)) {
@@ -52,7 +59,7 @@ public:
         std::string font_name = "fonts/ConsolateElf.ttf";
         io.Fonts->Clear();
 
-        // Build a custom range that includes ASCII + arrows + triangles
+        // Build a custom font range that includes ASCII + arrows + triangles
         static ImVector<ImWchar> ranges;
         {
             ImFontGlyphRangesBuilder b;
@@ -88,12 +95,13 @@ public:
     }
 
     /**
+     * Called when you click on a tag, adds the note to the current 'visible' notes.
      * 'visible' is a container that doesn't care about strict order,
      *   but it does care that when a tag is clicked on, that the note
      *   that opens, opens below the note with the tag that was clicked.
      * Using a ordered map with a integer index, we can add 'spaces'
      *   between the indices.
-     * unit32_t and 8192 gives us plenty of open indices between each 
+     * unit32_t and 8192 gives us plenty of open indices between each
      *   starting index.
      * 'in_visible' is a container to have a reference from note titles
      *   to 'visible' indices.
@@ -112,7 +120,145 @@ public:
         in_visible.insert(title);
     }
 
-    void create_notes() {
+    void editText(std::string& editedText, Note& note, std::string labelSuffix) {
+        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x); // or a fixed width you like
+        std::string label = "##edit_" + note.title + "_" + labelSuffix; // '##' = no visible label, keeps ID
+        bool submitted = ImGui::InputText(
+            label.c_str(),
+            &editedText,
+            ImGuiInputTextFlags_EnterReturnsTrue);
+
+        // Commit on Enter:
+        if (submitted) {
+            // note.title = edit_buf;
+            note.edit_text = false;
+            copyFromEditNote(note, editNote);
+            editMode = false;
+        }
+        // Or commit on focus loss:
+        else if (ImGui::IsItemDeactivatedAfterEdit()) {
+            // note.title = edit_buf;
+            note.edit_text = false;
+            copyFromEditNote(note, editNote);
+            editMode = false;
+        }
+        // Optional cancel with Esc:
+        else if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+            note.edit_text = false; // discard edit_buf
+            editMode = false;
+        }
+    }
+
+    void editMultilineText(std::string& editedText, Note& note) {
+        // size of the input text block
+        ImVec2 text_size = ImGui::CalcTextSize(editedText.c_str(), nullptr, false);
+        ImVec2 size = ImVec2(contentEditSize.x, text_size.y + contentEditSize.y);
+
+        std::string label = "##edit_" + note.title + "_content"; // '##' = no visible label, keeps ID
+        ImGuiInputTextFlags flags = ImGuiInputTextFlags_AllowTabInput |
+                                    ImGuiInputTextFlags_WordWrap | 
+                                    ImGuiInputTextFlags_NoHorizontalScroll |
+                                    ImGuiInputTextFlags_EnterReturnsTrue;
+        bool submitted = ImGui::InputTextMultiline(label.c_str(), &editedText, size, flags);
+
+        // Commit on Enter:
+        if (submitted) {
+            copyFromEditNote(note, editNote);
+            note.edit_text = false;
+            editMode = false;
+        }
+        // Or commit on focus loss:
+        else if (ImGui::IsItemDeactivatedAfterEdit()) {
+            copyFromEditNote(note, editNote);
+            note.edit_text = false;
+            editMode = false;
+        }
+        // Optional cancel with Esc:
+        else if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+            note.edit_text = false; // discard edit_buf
+            editMode = false;
+        }
+    }
+
+    void displayNormalNote(Note& note, uint32_t index, visible_iterator it) {
+        // title
+        ImGui::PushFont(font_title);
+        ImGui::TextUnformatted(note.title.c_str());
+        if (!editMode && ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
+            LOG_INFO() << "double clicked on title: " << note.title;
+            note.edit_text = true;
+            copyToEditNote(note, editNote);
+            editMode = true;
+        }
+        ImGui::PopFont();
+        ImGui::SameLine();
+
+        // move note up
+        if (ImGui::Button("↑") && it != visible.begin())
+            std::swap(it->second, std::prev(it)->second);
+        ImGui::SameLine();
+        // move note down
+        if (ImGui::Button("↓") && std::next(it) != visible.end())
+            std::swap(it->second, std::next(it)->second);
+
+        // tags
+        ImGui::Text("Tags: "); ImGui::SameLine();
+        for (const auto& tag : note.tags) {
+            if (ImGui::Button(tag.c_str())) {
+                add_visible_note(index, tag.c_str());
+            }
+            ImGui::SameLine();
+        }
+        ImGui::Spacing();
+
+        // content
+        ImGuiWindowFlags window_flags = ImGuiWindowFlags_None;
+        ImGui::BeginChild("ChildR", ImVec2(0, 0), ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_Borders, window_flags);
+        ImGui::TextWrapped(note.content.c_str());
+        if (!editMode && ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
+            LOG_INFO() << "double clicked on content: " << note.title;
+            note.edit_text = true;
+            copyToEditNote(note, editNote);
+            editMode = true;
+        }
+        ImGui::EndChild();
+
+        // children
+        ImGui::Text("Tagged in: ");
+        if (!note.edit_text) {
+            for (const auto& child : note.children) {
+                if (ImGui::Button(child.c_str())) {
+                    add_visible_note(index, child.c_str());
+                }
+                ImGui::SameLine();
+            }
+        }
+        else {
+            editText(editNote.children, note, "children");
+        }
+    }
+
+    void displayEditedNote(Note& note) {
+        // title + move controls
+        ImGui::PushFont(font_title);
+        editText(editNote.title, note, "title");
+        ImGui::PopFont();
+        ImGui::SameLine();
+
+        // Tags line
+        ImGui::Text("Tags: "); ImGui::SameLine();
+        editText(editNote.tags, note, "tags");
+        ImGui::Spacing();
+
+        // content
+        editMultilineText(editNote.content, note);
+
+        // children
+        ImGui::Text("Tagged in: ");
+        editText(editNote.children, note, "children");
+    }
+
+    void display_notes() {
         ImGui::Begin("NoteWiki");
 
         for (auto it = visible.begin(); it != visible.end(); ++it) {
@@ -120,38 +266,9 @@ public:
             ImGui::PushID(index);
             ImGui::BeginChild(note.title.c_str(), ImVec2(0, 0), ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_Border);
 
-            // header + move controls
-            ImGui::PushFont(font_title);
-            ImGui::TextUnformatted(note.title.c_str());
-            ImGui::PopFont();
-            ImGui::SameLine();
-            if (ImGui::Button("↑") && it != visible.begin())
-                std::swap(it->second, std::prev(it)->second);
-            ImGui::SameLine();
-            if (ImGui::Button("↓") && std::next(it) != visible.end())
-                std::swap(it->second, std::next(it)->second);
+            if (note.edit_text) displayEditedNote(note);
+            else displayNormalNote(note, index, it);
 
-            ImGui::Text("Tags: "); ImGui::SameLine();
-            for (const auto& tag : note.tags) {
-                if (ImGui::Button(tag.c_str())) {
-                    add_visible_note(index, tag.c_str());
-                }
-                ImGui::SameLine();
-            }
-            ImGui::Spacing();
-
-            ImGuiWindowFlags window_flags = ImGuiWindowFlags_None;
-            ImGui::BeginChild("ChildR", ImVec2(0, 0), ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_Borders, window_flags);
-            ImGui::TextWrapped(note.content.c_str());
-            ImGui::EndChild();
-
-            ImGui::Text("Tagged: ");
-            for (const auto& child : note.children) {
-                if (ImGui::Button(child.c_str())) {
-                    add_visible_note(index, child.c_str());
-                }
-                ImGui::SameLine();
-            }
             ImGui::EndChild();
             ImGui::PopID();
         }
@@ -169,9 +286,9 @@ public:
             ImGui_ImplGlfw_NewFrame();
             ImGui::NewFrame();
 
-            create_notes();
+            display_notes();
 
-            ImGui::ShowDemoWindow();
+            // ImGui::ShowDemoWindow();
 
             ImGui::Render();
             int display_w, display_h;

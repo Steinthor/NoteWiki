@@ -11,6 +11,20 @@
 
 #include "logger.h"
 
+namespace note {
+
+/**
+ * represents raw note data.
+ * The title of a note is the key in 'data' object of NoteDataManager
+ */
+struct NoteData {
+    std::string content;
+    std::vector<std::string> tags;
+};
+
+/**
+ * represents a note that should be visible in a UI
+ */
 struct Note {
     std::string title;
     std::string content;
@@ -20,10 +34,59 @@ struct Note {
     bool edit_text{false};
 };
 
-struct NoteData {
+/**
+ * A placeholder for the strings when editing a note
+ */
+struct EditingNote {
+    std::string title;
     std::string content;
-    std::vector<std::string> tags;
+    std::string tags;
+    std::string children;
 };
+
+/**
+ * Copies the content of the input note to ImGuiViewers' editNote.
+ */
+void copyToEditNote(const Note& note, EditingNote& editNote) {
+    editNote.title = note.title;
+    editNote.content = note.content;
+    editNote.tags.clear();
+    for (const auto& tag : note.tags) {
+        editNote.tags = editNote.tags + " " + tag;
+    }
+    editNote.children.clear();
+    for (const auto& child : note.children) {
+        editNote.children = editNote.children + " " + child;
+    }
+}
+
+void copyFromEditNote(Note& note, EditingNote editNote) {
+    note.title = editNote.title;
+    note.content = editNote.content;
+    note.tags.clear();
+    std::string tag;
+    size_t start = 0, next;
+    while ((next = editNote.tags.find_first_of(" ", start)) != std::string::npos) {
+        tag = editNote.tags.substr(start, next - start);
+        if (!tag.empty()) note.tags.emplace_back(tag);
+        start = next + 1;
+    }
+    // check for a final tag
+    tag = editNote.tags.substr(start, editNote.tags.size() - start);
+    if (!tag.empty()) note.tags.emplace_back(tag);
+
+    note.children.clear();
+    std::string child;
+    start = 0;
+    while ((next = editNote.children.find_first_of(" ", start)) != std::string::npos) {
+        child = editNote.children.substr(start, next - start);
+        if (!child.empty()) note.children.emplace_back(child);
+        start = next + 1;
+    }
+    // check for final child
+    child = editNote.children.substr(start, editNote.children.size() - start);
+    if (!child.empty()) note.children.emplace_back(child);
+}
 
 class NoteDataManager {
 private:
@@ -94,3 +157,5 @@ public:
         }
     }
 };
+
+} // namespace note
