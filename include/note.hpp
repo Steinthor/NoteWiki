@@ -22,6 +22,13 @@ struct NoteData {
     std::vector<std::string> tags;
 };
 
+std::ostream& operator<<(std::ostream& os, const NoteData& note) {
+    std::string tags;
+    for(auto& tag: note.tags) tags += tag + ", ";
+    return os << "  content: \n    " << note.content << "\n"
+              << "  tags: " << tags << std::endl;
+}
+
 /**
  * represents a note that should be visible in a UI
  */
@@ -33,6 +40,17 @@ struct Note {
     bool show_note{false};
     bool edit_text{false};
 };
+
+std::ostream& operator<<(std::ostream& os, const Note& note) {
+    std::string tags;
+    for(auto& tag: note.tags) tags += tag + ", ";
+    std::string kids;
+    for(auto& kid: note.children) kids += kid + ", ";
+    return os << "title: " << note.title << "\n"
+              << "  tags: " << tags << "\n"
+              << "  content: \n    " << note.content << "\n"
+              << "  kids: " << kids << std::endl;
+}
 
 /**
  * A placeholder for the strings when editing a note
