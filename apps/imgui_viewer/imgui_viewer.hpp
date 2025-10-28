@@ -34,6 +34,9 @@ public:
         }
     }
 
+    /**
+     * Setup for ImgUI: creates the window and sets up the fonts
+     */
     int setup() {
         if (!glfwInit())
             return -1;
@@ -79,6 +82,9 @@ public:
         return 0;
     }
 
+    /**
+     * teardown for ImgUI
+     */
     int tearDown() {
         if (window) {
             glfwDestroyWindow(window);
@@ -120,6 +126,7 @@ public:
         uint32_t new_index;
         if (after != visible.end())
             new_index = (after->first - before->first) / 2 + before->first;
+            // TODO: edge case: if new_index is same as 'before', need to implement re-indexing
         else
             new_index = before->first + 8192;
         visible[new_index] = noteStore.get_note(title, true);
@@ -218,7 +225,7 @@ public:
         // content
         ImGuiWindowFlags window_flags = ImGuiWindowFlags_None;
         ImGui::BeginChild("ChildR", ImVec2(0, 0), ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_Borders, window_flags);
-        ImGui::TextWrapped(note.content.c_str());
+        ImGui::TextWrapped("%s", note.content.c_str());  // a 'printf' style function
         if (!editMode && ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
             LOG_INFO() << "double clicked on content: " << note.title;
             note.edit_text = true;
@@ -247,7 +254,6 @@ public:
         ImGui::PushFont(font_title);
         editText(editNote.title, note, "title");
         ImGui::PopFont();
-        ImGui::SameLine();
 
         // Tags line
         ImGui::Text("Tags: "); ImGui::SameLine();
@@ -272,6 +278,7 @@ public:
 
             if (note.edit_text) displayEditedNote(note);
             else displayNormalNote(note, index, it);
+            // we might have tampered with 'visible', so we have to catch that and return
 
             ImGui::EndChild();
             ImGui::PopID();
