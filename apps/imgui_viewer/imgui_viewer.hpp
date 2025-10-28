@@ -13,7 +13,7 @@ class ImGuiViewer {
 private:
     Options opts_;
     GLFWwindow* window{nullptr};
-    NoteDataManager noteDataManager;
+    NoteStore noteStore;
     std::map<uint32_t, Note> visible;
     std::unordered_set<std::string> in_visible;
     using visible_iterator = std::map<uint32_t, Note>::iterator;
@@ -24,12 +24,11 @@ private:
     ImVec2 contentEditSize {-FLT_MIN, 30};
 public:
     ImGuiViewer(Options opts) : opts_(std::move(opts)),
-                                noteDataManager(NoteDataManager(opts_.storage_path)) {
-        Note default_note = noteDataManager.get_note("default");
+                                noteStore(NoteStore(opts_.storage_path)) {
+        Note default_note = noteStore.get_note("default");
         int count = 0;
         for (const auto& kid : default_note.children) {
-            // visible.emplace_back(noteDataManager.get_note(kid));
-            visible[count * 8192] = noteDataManager.get_note(kid, true);
+            visible[count * 8192] = noteStore.get_note(kid, true);
             in_visible.insert(kid);
             count++;
         }
@@ -110,13 +109,21 @@ public:
         if (in_visible.find(title) != in_visible.end())
             return;
         auto before = visible.find(index_hint);
+        if (before == visible.end()) {
+            LOG_DEBUG() << "no notes in 'visible'";
+            visible[index_hint] = noteStore.get_note(title, true);
+            LOG_DEBUG() << "added: \n" << visible[index_hint];
+            in_visible.insert(title);
+            return;
+        }
         auto after = std::next(before);
         uint32_t new_index;
         if (after != visible.end())
             new_index = (after->first - before->first) / 2 + before->first;
         else
             new_index = before->first + 8192;
-        visible[new_index] = noteDataManager.get_note(title);
+        visible[new_index] = noteStore.get_note(title, true);
+        LOG_DEBUG() << "new index: " << new_index << ", added: \n" << visible[new_index];
         in_visible.insert(title);
     }
 
@@ -130,17 +137,14 @@ public:
 
         // Commit on Enter:
         if (submitted) {
-            // note.title = edit_buf;
             note.edit_text = false;
-            copyFromEditNote(note, editNote);
             editMode = false;
-        }
-        // Or commit on focus loss:
-        else if (ImGui::IsItemDeactivatedAfterEdit()) {
-            // note.title = edit_buf;
-            note.edit_text = false;
+            std::string old_title = note.title;
+            std::string new_title = editNote.title;
             copyFromEditNote(note, editNote);
-            editMode = false;
+            noteStore.update_note(old_title, new_title, note.content, note.tags);
+            update_visible(old_title, new_title);
+            LOG_DEBUG() << "here";
         }
         // Optional cancel with Esc:
         else if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {

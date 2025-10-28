@@ -104,10 +104,10 @@ TEST(NoteTest, MemoryUsage) {
     EXPECT_EQ(note.content.size(), 1000);
 }
 
-// Test NoteDataManager functionality
+// Test NoteStore functionality
 // Test loading from valid JSON
 // Test handling of missing/invalid files
 // Test note creation and manipulation
-TEST(NoteDataManagerTest, LoadNotesFromFile) {
-    NoteDataManager manager;
+TEST(NoteStoreTest, LoadNotesFromFile) {
+    NoteStore manager;
 }

@@ -15,7 +15,7 @@ namespace note {
 
 /**
  * represents raw note data.
- * The title of a note is the key in 'data' object of NoteDataManager
+ * The title of a note is the key in 'data' object of NoteStore
  */
 struct NoteData {
     std::string content;
@@ -88,12 +88,12 @@ void copyFromEditNote(Note& note, EditingNote editNote) {
     if (!child.empty()) note.children.emplace_back(child);
 }
 
-class NoteDataManager {
+class NoteStore {
 private:
     std::unordered_map<std::string, NoteData> data;
     std::unordered_map<std::string, std::vector<std::string>> children;
 public:
-    NoteDataManager(std::string storage_path) {
+    NoteStore(std::string storage_path) {
         if (!load_json_file(storage_path)) {
             generate_default();
         }

@@ -6,15 +6,15 @@ using namespace note;
 class CliViewer {
 private:
     Options opts_;
-    NoteDataManager noteDataManager;
+    NoteStore noteStore;
     std::vector<Note> visible;
     std::string input;
 public:
     CliViewer(Options opts) : opts_(std::move(opts)),
-                              noteDataManager(NoteDataManager(opts_.storage_path)) {
-        Note default_note = noteDataManager.get_note("default");
+                              noteStore(NoteStore(opts_.storage_path)) {
+        Note default_note = noteStore.get_note("default");
         for (const auto& kid : default_note.children) {
-            visible.emplace_back(noteDataManager.get_note(kid));
+            visible.emplace_back(noteStore.get_note(kid));
         }
     }
 
