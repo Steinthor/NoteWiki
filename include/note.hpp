@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm> // for iter_swap
 #include <iostream> // for cin
 #include <stdio.h>
 #include <string>
@@ -149,7 +150,7 @@ public:
         std::string title = "NoteWiki";
         std::vector<std::string> tags = {"default"};
         std::string content = "This is the NoteWiki app.\n  Tag any note 'default' to show them on startup.";
-        add_note(title, tags, content);
+        add_note(title, content, tags);
     }
 
     Note get_note(std::string title, bool visible = false) {
@@ -167,11 +168,36 @@ public:
     }
 
     void add_note(std::string title,
-                  std::vector<std::string> tags,
-                  std::string content) {
+                  std::string content,
+                  std::vector<std::string> tags) {
         data[title] = {content, tags};
         for (const auto& tag : tags) {
             children[tag].emplace_back(title);
+        }
+    }
+
+    void update_note(const std::string& old_title,
+                     const std::string& new_title,
+                     const std::string& content,
+                     const std::vector<std::string>& tags) {
+        if ((old_title == new_title) && (data[old_title].content == content) && (data[old_title].tags) == tags) {
+            return;
+        }
+
+        data.erase(old_title);
+        data[new_title] = {content, tags};
+        LOG_DEBUG() << "update_note: \n" << data[new_title];
+        // update the children of a tag, removing old_title, adding the new_title
+        for (const auto& tag : tags) {
+            // if (children.find(tag) == children.end())
+
+            // continue;
+            auto it = std::find(children[tag].begin(), children[tag].end(), old_title);
+            if (it != children.at(tag).end()) {
+                std::iter_swap(it, children[tag].end() - 1); // Move target to end
+                children[tag].pop_back();                    // Remove it
+            }
+            children[tag].emplace_back(new_title);
         }
     }
 };

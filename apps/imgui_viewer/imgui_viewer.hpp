@@ -112,8 +112,11 @@ public:
      *   to 'visible' indices.
      */
     void add_visible_note(u_int32_t index_hint, std::string title) {
-        if (in_visible.find(title) != in_visible.end())
+        LOG_DEBUG() << "adding note: " << title << " to visible, hint: " << index_hint;
+        if (in_visible.find(title) != in_visible.end()) {
+            LOG_DEBUG() << "  note found in 'visible'";
             return;
+        }
         auto before = visible.find(index_hint);
         if (before == visible.end()) {
             LOG_DEBUG() << "no notes in 'visible'";
@@ -132,6 +135,22 @@ public:
         visible[new_index] = noteStore.get_note(title, true);
         LOG_DEBUG() << "new index: " << new_index << ", added: \n" << visible[new_index];
         in_visible.insert(title);
+    }
+
+    /**
+     * given a note has been changed, the tags/children of other notes need to be updated
+     */
+    void update_visible(std::string old_title, std::string new_title) {
+        visible.clear();
+        auto old_visible = in_visible;
+        in_visible.clear();
+        for (const auto& title : old_visible) {
+            if (title == old_title) {
+                LOG_DEBUG() << "updating: " << title << " to: " << new_title;
+                add_visible_note(0, new_title);
+            }
+            else add_visible_note(0, title);
+        }
     }
 
     void editText(std::string& editedText, Note& note, std::string labelSuffix) {
@@ -268,7 +287,7 @@ public:
         editText(editNote.children, note, "children");
     }
 
-    void display_notes() {
+    void renderNotes() {
         ImGui::Begin("NoteWiki");
 
         for (auto it = visible.begin(); it != visible.end(); ++it) {
@@ -297,7 +316,7 @@ public:
             ImGui_ImplGlfw_NewFrame();
             ImGui::NewFrame();
 
-            display_notes();
+            renderNotes();
 
             // ImGui::ShowDemoWindow();
 
