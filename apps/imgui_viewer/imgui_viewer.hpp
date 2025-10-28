@@ -22,6 +22,7 @@ private:
     EditingNote editNote;
     bool editMode {false};
     ImVec2 contentEditSize {-FLT_MIN, 30};
+    bool dirty {false};
 public:
     ImGuiViewer(Options opts) : opts_(std::move(opts)),
                                 noteStore(NoteStore(opts_.storage_path)) {
