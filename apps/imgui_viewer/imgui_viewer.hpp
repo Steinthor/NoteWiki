@@ -20,7 +20,7 @@ private:
     ImFont* font_regular;
     ImFont* font_title;
     EditingNote editNote;
-    bool editMode = false;
+    bool editMode {false};
     ImVec2 contentEditSize {-FLT_MIN, 30};
 public:
     ImGuiViewer(Options opts) : opts_(std::move(opts)),
