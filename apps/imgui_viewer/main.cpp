@@ -1,6 +1,5 @@
 #include "imgui_viewer.hpp"
 #include "logger.h"
-#include "note.hpp"
 #include "options.h"
 
 int main(int argc, char* argv[]) {
@@ -13,7 +12,7 @@ int main(int argc, char* argv[]) {
     Logger& log = Logger::getInstance();
     if (parsed.value->verbose) log.setLogLevel(LogLevel::INFO);
 
-    ImGuiViewer viewer(*parsed.value);
+    NoteAppUI viewer(*parsed.value);
 
     LOG_INFO() << "Starting ui";
     return viewer.run();

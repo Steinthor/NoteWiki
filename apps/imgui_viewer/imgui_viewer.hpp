@@ -1,336 +1,71 @@
 #include "note.hpp"
 #include "options.h"
-
-#include "imgui.h"
-#include "misc/cpp/imgui_stdlib.h"
-#include "backends/imgui_impl_glfw.h"
-#include "backends/imgui_impl_opengl3.h"
-#include <GLFW/glfw3.h>
+#include "parser.h"
+#include "renderer.hpp"
+#include "renderer_ctx.hpp"
+#include "viewstate.hpp"
 
 using namespace note;
 
-class ImGuiViewer {
+class NoteAppUI {
 private:
     Options opts_;
-    GLFWwindow* window{nullptr};
-    NoteStore noteStore;
-    std::map<uint32_t, Note> visible;
-    std::unordered_set<std::string> in_visible;
-    using visible_iterator = std::map<uint32_t, Note>::iterator;
-    ImFont* font_regular;
-    ImFont* font_title;
-    EditingNote editNote;
-    bool editMode {false};
-    ImVec2 contentEditSize {-FLT_MIN, 30};
-    bool dirty {false};
+    NoteStore store;
+    ViewState view;
+    ImguiRenderer renderer;
+    EventQueue events;
+    bool isRunning{false};
 public:
-    ImGuiViewer(Options opts) : opts_(std::move(opts)),
-                                noteStore(NoteStore(opts_.storage_path)) {
-        Note default_note = noteStore.get_note("default");
-        int count = 0;
-        for (const auto& kid : default_note.children) {
-            visible[count * 8192] = noteStore.get_note(kid, true);
-            in_visible.insert(kid);
-            count++;
-        }
-    }
-
-    /**
-     * Setup for ImgUI: creates the window and sets up the fonts
-     */
-    int setup() {
-        if (!glfwInit())
-            return -1;
-
-        const char* glsl_version = "#version 130";
-        window = glfwCreateWindow(800, 600, opts_.app_name.c_str(), nullptr, nullptr);
-        if (!window) {
-            glfwTerminate();
-            return -1;
-        }
-        glfwMakeContextCurrent(window);
-        glfwSwapInterval(1); // Enable vsync
-
-        IMGUI_CHECKVERSION();
-        ImGui::CreateContext();
-        ImGuiIO& io = ImGui::GetIO(); (void)io;
-        ImGui::StyleColorsDark();
-        ImGui_ImplGlfw_InitForOpenGL(window, true);
-        ImGui_ImplOpenGL3_Init(glsl_version);
-
-        //setup fonts
-        std::string font_name = "fonts/ConsolateElf.ttf";
-        io.Fonts->Clear();
-
-        // Build a custom font range that includes ASCII + arrows + triangles
-        static ImVector<ImWchar> ranges;
-        {
-            ImFontGlyphRangesBuilder b;
-            b.AddRanges(io.Fonts->GetGlyphRangesDefault()); // ASCII
-            b.AddText("↑↓←→▲▼△▽");                         // any extra symbols you need
-            b.BuildRanges(&ranges);
-        }
-
-        // regular text
-        font_regular = io.Fonts->AddFontFromFileTTF(font_name.c_str(), 20.0f, nullptr, ranges.Data);
-        // titles
-        font_title = io.Fonts->AddFontFromFileTTF(font_name.c_str(), 35.0f, nullptr, ranges.Data);
-        // Build font atlas
-        io.Fonts->Build();
-        // set regular as default
-        // ImGui::PushFont(font_regular);
-
-        return 0;
-    }
-
-    /**
-     * teardown for ImgUI
-     */
-    int tearDown() {
-        if (window) {
-            glfwDestroyWindow(window);
-            window = nullptr;
-        }
-
-        ImGui_ImplOpenGL3_Shutdown();
-        ImGui_ImplGlfw_Shutdown();
-        ImGui::DestroyContext();
-        glfwTerminate();
-
-        return 0;
-    }
-
-    /**
-     * Called when you click on a tag, adds the note to the current 'visible' notes.
-     * 'visible' is a container that doesn't care about strict order,
-     *   but it does care that when a tag is clicked on, that the note
-     *   that opens, opens below the note with the tag that was clicked.
-     * Using a ordered map with a integer index, we can add 'spaces'
-     *   between the indices.
-     * unit32_t and 8192 gives us plenty of open indices between each
-     *   starting index.
-     * 'in_visible' is a container to have a reference from note titles
-     *   to 'visible' indices.
-     */
-    void add_visible_note(u_int32_t index_hint, std::string title) {
-        LOG_DEBUG() << "adding note: " << title << " to visible, hint: " << index_hint;
-        if (in_visible.find(title) != in_visible.end()) {
-            LOG_DEBUG() << "  note found in 'visible'";
-            return;
-        }
-        auto before = visible.find(index_hint);
-        if (before == visible.end()) {
-            LOG_DEBUG() << "no notes in 'visible'";
-            visible[index_hint] = noteStore.get_note(title, true);
-            LOG_DEBUG() << "added: \n" << visible[index_hint];
-            in_visible.insert(title);
-            return;
-        }
-        auto after = std::next(before);
-        uint32_t new_index;
-        if (after != visible.end())
-            new_index = (after->first - before->first) / 2 + before->first;
-            // TODO: edge case: if new_index is same as 'before', need to implement re-indexing
-        else
-            new_index = before->first + 8192;
-        visible[new_index] = noteStore.get_note(title, true);
-        LOG_DEBUG() << "new index: " << new_index << ", added: \n" << visible[new_index];
-        in_visible.insert(title);
-    }
-
-    /**
-     * given a note has been changed, the tags/children of other notes need to be updated
-     */
-    void update_visible(std::string old_title, std::string new_title) {
-        visible.clear();
-        auto old_visible = in_visible;
-        in_visible.clear();
-        for (const auto& title : old_visible) {
-            if (title == old_title) {
-                LOG_DEBUG() << "updating: " << title << " to: " << new_title;
-                add_visible_note(0, new_title);
-            }
-            else add_visible_note(0, title);
-        }
-    }
-
-    void editText(std::string& editedText, Note& note, std::string labelSuffix) {
-        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x); // or a fixed width you like
-        std::string label = "##edit_" + note.title + "_" + labelSuffix; // '##' = no visible label, keeps ID
-        bool submitted = ImGui::InputText(
-            label.c_str(),
-            &editedText,
-            ImGuiInputTextFlags_EnterReturnsTrue);
-
-        // Commit on Enter:
-        if (submitted) {
-            note.edit_text = false;
-            editMode = false;
-            std::string old_title = note.title;
-            std::string new_title = editNote.title;
-            copyFromEditNote(note, editNote);
-            noteStore.update_note(old_title, new_title, note.content, note.tags);
-            update_visible(old_title, new_title);
-            LOG_DEBUG() << "here";
-        }
-        // Optional cancel with Esc:
-        else if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
-            note.edit_text = false; // discard edit_buf
-            editMode = false;
-        }
-    }
-
-    void editMultilineText(std::string& editedText, Note& note) {
-        // size of the input text block
-        ImVec2 text_size = ImGui::CalcTextSize(editedText.c_str(), nullptr, false);
-        ImVec2 size = ImVec2(contentEditSize.x, text_size.y + contentEditSize.y);
-
-        std::string label = "##edit_" + note.title + "_content"; // '##' = no visible label, keeps ID
-        ImGuiInputTextFlags flags = ImGuiInputTextFlags_AllowTabInput |
-                                    ImGuiInputTextFlags_WordWrap | 
-                                    ImGuiInputTextFlags_NoHorizontalScroll |
-                                    ImGuiInputTextFlags_EnterReturnsTrue;
-        bool submitted = ImGui::InputTextMultiline(label.c_str(), &editedText, size, flags);
-
-        // Commit on Enter:
-        if (submitted) {
-            copyFromEditNote(note, editNote);
-            note.edit_text = false;
-            editMode = false;
-        }
-        // Or commit on focus loss:
-        else if (ImGui::IsItemDeactivatedAfterEdit()) {
-            copyFromEditNote(note, editNote);
-            note.edit_text = false;
-            editMode = false;
-        }
-        // Optional cancel with Esc:
-        else if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
-            note.edit_text = false; // discard edit_buf
-            editMode = false;
-        }
-    }
-
-    void displayNormalNote(Note& note, uint32_t index, visible_iterator it) {
-        // title
-        ImGui::PushFont(font_title);
-        ImGui::TextUnformatted(note.title.c_str());
-        if (!editMode && ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
-            LOG_INFO() << "double clicked on title: " << note.title;
-            note.edit_text = true;
-            copyToEditNote(note, editNote);
-            editMode = true;
-        }
-        ImGui::PopFont();
-        ImGui::SameLine();
-
-        // move note up
-        if (ImGui::Button("↑") && it != visible.begin())
-            std::swap(it->second, std::prev(it)->second);
-        ImGui::SameLine();
-        // move note down
-        if (ImGui::Button("↓") && std::next(it) != visible.end())
-            std::swap(it->second, std::next(it)->second);
-
-        // tags
-        ImGui::Text("Tags: "); ImGui::SameLine();
-        for (const auto& tag : note.tags) {
-            if (ImGui::Button(tag.c_str())) {
-                add_visible_note(index, tag.c_str());
-            }
-            ImGui::SameLine();
-        }
-        ImGui::Spacing();
-
-        // content
-        ImGuiWindowFlags window_flags = ImGuiWindowFlags_None;
-        ImGui::BeginChild("ChildR", ImVec2(0, 0), ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_Borders, window_flags);
-        ImGui::TextWrapped("%s", note.content.c_str());  // a 'printf' style function
-        if (!editMode && ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
-            LOG_INFO() << "double clicked on content: " << note.title;
-            note.edit_text = true;
-            copyToEditNote(note, editNote);
-            editMode = true;
-        }
-        ImGui::EndChild();
-
-        // children
-        ImGui::Text("Tagged in: ");
-        if (!note.edit_text) {
-            for (const auto& child : note.children) {
-                if (ImGui::Button(child.c_str())) {
-                    add_visible_note(index, child.c_str());
-                }
-                ImGui::SameLine();
-            }
-        }
-        else {
-            editText(editNote.children, note, "children");
-        }
-    }
-
-    void displayEditedNote(Note& note) {
-        // title + move controls
-        ImGui::PushFont(font_title);
-        editText(editNote.title, note, "title");
-        ImGui::PopFont();
-
-        // Tags line
-        ImGui::Text("Tags: "); ImGui::SameLine();
-        editText(editNote.tags, note, "tags");
-        ImGui::Spacing();
-
-        // content
-        editMultilineText(editNote.content, note);
-
-        // children
-        ImGui::Text("Tagged in: ");
-        editText(editNote.children, note, "children");
-    }
-
-    void renderNotes() {
-        ImGui::Begin("NoteWiki");
-
-        for (auto it = visible.begin(); it != visible.end(); ++it) {
-            auto& [index, note] = *it;
-            ImGui::PushID(index);
-            ImGui::BeginChild(note.title.c_str(), ImVec2(0, 0), ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_Border);
-
-            if (note.edit_text) displayEditedNote(note);
-            else displayNormalNote(note, index, it);
-            // we might have tampered with 'visible', so we have to catch that and return
-
-            ImGui::EndChild();
-            ImGui::PopID();
-        }
-
-        ImGui::End();
+    NoteAppUI(Options opts) : opts_(std::move(opts)),
+                              store(NoteStore(opts_.storage_path)) {
+        LOG_DEBUG() << "initializing NoteAppUI";
+        const auto kids = store.getKids("default");
+        view.addFromKids(kids, store);
     }
 
     int run() {
-        if (setup() != 0) return -1;
+        isRunning = true;
+        if (renderer.setup(opts_.app_name) != 0) return -1;
 
-        // The active loop that is always running and re-rendering the UI
-        while (!glfwWindowShouldClose(window)) {
-            glfwPollEvents();
-            ImGui_ImplOpenGL3_NewFrame();
-            ImGui_ImplGlfw_NewFrame();
-            ImGui::NewFrame();
-
-            renderNotes();
-
-            // ImGui::ShowDemoWindow();
-
-            ImGui::Render();
-            int display_w, display_h;
-            glfwGetFramebufferSize(window, &display_w, &display_h);
-            glViewport(0, 0, display_w, display_h);
-            glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
-            glClear(GL_COLOR_BUFFER_BIT);
-            ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-            glfwSwapBuffers(window);
+        while (isRunning) {
+            // - render a frame
+            isRunning = renderer.render(RenderCtx{store, view, events});
+            // - process events in event queue
+            Event e;
+            while (events.try_pop(e)) {
+                switch (e.type) {
+                    case EventType::MoveUp: {
+                        view.moveUp(e.id);
+                        break;
+                    }
+                    case EventType::MoveDown: {
+                        view.moveDown(e.id);
+                        break;
+                    }
+                    case EventType::BeginEdit: {
+                        view.startEdit(e.id, store.getNoteStrings(e.id));
+                        break;
+                    }
+                    case EventType::SubmitEdit: {
+                        auto note = store.getNoteStrings(e.id);
+                        view.copyFromEdit(note);
+                        store.updateNote(e.id, note.title, note.content, note.tags, note.kids);
+                        view.stopEdit(e.id);
+                        break;
+                    }
+                    case EventType::CancelEdit: {
+                        view.stopEdit(e.id);
+                        break;
+                    }
+                    case EventType::OpenId: {
+                        if (e.insertAfter.has_value())
+                            view.addId(e.id, *e.insertAfter);
+                        break;
+                    }
+                }
+            }
         }
 
-        return tearDown();
+        return renderer.tearDown();
     }
 };

@@ -7,14 +7,14 @@ class CliViewer {
 private:
     Options opts_;
     NoteStore noteStore;
-    std::vector<Note> visible;
+    std::vector<NoteData> visible;
     std::string input;
 public:
     CliViewer(Options opts) : opts_(std::move(opts)),
                               noteStore(NoteStore(opts_.storage_path)) {
-        Note default_note = noteStore.get_note("default");
-        for (const auto& kid : default_note.children) {
-            visible.emplace_back(noteStore.get_note(kid));
+        NoteData default_note = noteStore.getNote("default");
+        for (const auto& kid : default_note.kids) {
+            visible.emplace_back(noteStore.getNote(kid));
         }
     }
 
@@ -36,10 +36,10 @@ public:
                 std::cout << "  ----\n";
                 std::cout << "  " << note.content << "\n";
                 std::cout << "  ----\n";
-                if (note.children.size() > 0) {
+                if (note.kids.size() > 0) {
                     std::cout << "  children: ";
                     separator.clear();
-                    for (const auto& child : note.children) {
+                    for (const auto& child : note.kids) {
                         std::cout << separator << child;
                         separator = ", ";
                     }

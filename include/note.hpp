@@ -1,4 +1,7 @@
 #pragma once
+#include "logger.h"
+
+#include <nlohmann/json.hpp>
 
 #include <algorithm> // for iter_swap
 #include <iostream> // for cin
@@ -8,115 +11,81 @@
 #include <vector>
 #include <fstream>
 
-#include <nlohmann/json.hpp>
-
-#include "logger.h"
-
 namespace note {
 
+using NoteId = uint32_t;
+
 /**
- * represents raw note data.
- * The title of a note is the key in 'data' object of NoteStore
+ * represents a note datanode.
+ * 'tags' and 'kids' represent a note graph where 'tags' are parents nodes
+ * and 'kids' are children nodes.
  */
 struct NoteData {
-    std::string content;
-    std::vector<std::string> tags;
+    std::string title;
+    std::string content{};
+    std::vector<NoteId> tags{};
+    std::vector<NoteId> kids{};
+};
+
+/**
+ * represents a note with all data as strings
+ */
+struct NoteDataStrings {
+    std::string title;
+    std::string content{};
+    std::vector<std::string> tags{};
+    std::vector<std::string> kids{};
 };
 
 std::ostream& operator<<(std::ostream& os, const NoteData& note) {
     std::string tags;
     for(auto& tag: note.tags) tags += tag + ", ";
-    return os << "  content: \n    " << note.content << "\n"
-              << "  tags: " << tags << std::endl;
-}
-
-/**
- * represents a note that should be visible in a UI
- */
-struct Note {
-    std::string title;
-    std::string content;
-    std::vector<std::string> tags;
-    std::vector<std::string> children;
-    bool show_note{false};
-    bool edit_text{false};
-};
-
-std::ostream& operator<<(std::ostream& os, const Note& note) {
-    std::string tags;
-    for(auto& tag: note.tags) tags += tag + ", ";
     std::string kids;
-    for(auto& kid: note.children) kids += kid + ", ";
-    return os << "title: " << note.title << "\n"
+    for(auto& kid: note.kids) kids += kid + ", ";
+    return os << "Title: " << note.title << "\n"
               << "  tags: " << tags << "\n"
               << "  content: \n    " << note.content << "\n"
               << "  kids: " << kids << std::endl;
 }
 
 /**
- * A placeholder for the strings when editing a note
+ * Class to manage note data objects.
+ * next_id: 'NoteId's start from 1 so we can use 0 as an empty value.
  */
-struct EditingNote {
-    std::string title;
-    std::string content;
-    std::string tags;
-    std::string children;
-};
-
-/**
- * Copies the content of the input note to ImGuiViewers' editNote.
- */
-void copyToEditNote(const Note& note, EditingNote& editNote) {
-    editNote.title = note.title;
-    editNote.content = note.content;
-    editNote.tags.clear();
-    for (const auto& tag : note.tags) {
-        editNote.tags = editNote.tags + " " + tag;
-    }
-    editNote.children.clear();
-    for (const auto& child : note.children) {
-        editNote.children = editNote.children + " " + child;
-    }
-}
-
-void copyFromEditNote(Note& note, EditingNote editNote) {
-    note.title = editNote.title;
-    note.content = editNote.content;
-    note.tags.clear();
-    std::string tag;
-    size_t start = 0, next;
-    while ((next = editNote.tags.find_first_of(" ", start)) != std::string::npos) {
-        tag = editNote.tags.substr(start, next - start);
-        if (!tag.empty()) note.tags.emplace_back(tag);
-        start = next + 1;
-    }
-    // check for a final tag
-    tag = editNote.tags.substr(start, editNote.tags.size() - start);
-    if (!tag.empty()) note.tags.emplace_back(tag);
-
-    note.children.clear();
-    std::string child;
-    start = 0;
-    while ((next = editNote.children.find_first_of(" ", start)) != std::string::npos) {
-        child = editNote.children.substr(start, next - start);
-        if (!child.empty()) note.children.emplace_back(child);
-        start = next + 1;
-    }
-    // check for final child
-    child = editNote.children.substr(start, editNote.children.size() - start);
-    if (!child.empty()) note.children.emplace_back(child);
-}
-
 class NoteStore {
 private:
-    std::unordered_map<std::string, NoteData> data;
-    std::unordered_map<std::string, std::vector<std::string>> children;
+    std::unordered_map<NoteId, NoteData> data;
+    std::unordered_map<std::string, NoteId> title_to_id;
+    // std::unordered_map<NoteId, std::vector<std::string>> kids;
+    NoteId next_id {1};
+
+    // ensure a stable NoteId for notes and tags
+    NoteId getId(const std::string& title) {
+        if (auto it = title_to_id.find(title); it != title_to_id.end()) {
+            LOG_DEBUG() << "found id for: " << title << ", id: " << it->second;
+            return it->second;
+        }
+        NoteId id = next_id++;
+        LOG_DEBUG() << "adding title: " << title << ", id: " << id;
+        title_to_id.emplace(title, id);
+        data[id] = {title, ""};  // placeholder
+        return id;
+    };
 public:
     NoteStore(std::string storage_path) {
+        LOG_DEBUG() << "loading NoteStore from path: " << storage_path;
         if (!load_json_file(storage_path)) {
-            generate_default();
+            LOG_DEBUG() << "could not load filepath, generating defaults";
+            generateDefault();
         }
     }
+
+    NoteId getId(const std::string& title) const {
+        if (auto it = title_to_id.find(title); it != title_to_id.end()) {
+            return it->second;
+        }
+        throw std::out_of_range("Error!  Could not find: " + title + " in title_to_id!");
+    };
 
     bool load_json_file(std::string json_file) {
         std::ifstream file(json_file);
@@ -133,72 +102,128 @@ public:
             return false;
         }
 
+        // import notes into 'data'
+        NoteId this_id;
         for (const auto& note : j) {
-            const auto& title = note["title"];
-            const auto& content = note["content"];
-            const auto& tags = note["tags"];
-            data[title] = {content, tags};
+            auto title = note["title"].get<std::string>();
+            auto content = note["content"].get<std::string>();
+            auto tags = note["tags"].get<std::vector<std::string>>();
+
+            this_id = getId(title);
+            std::vector<NoteId> tag_ids;
+            for (const auto& tag : tags) tag_ids.emplace_back(getId(tag));
+            data[this_id] = NoteData{title, content, tag_ids, {}};
+            title_to_id[title] = this_id;
+            // add this title to the tags' kids
             for (const auto& tag : tags) {
-                children[tag].emplace_back(title);
+                NoteId tag_id = getId(tag);
+                data[tag_id].kids.emplace_back(this_id);
             }
         }
 
         return true;
     }
 
-    void generate_default() {
+    /**
+     * In case no file was found, generate default data.
+     */
+    void generateDefault() {
         std::string title = "NoteWiki";
         std::vector<std::string> tags = {"default"};
         std::string content = "This is the NoteWiki app.\n  Tag any note 'default' to show them on startup.";
-        add_note(title, content, tags);
+        addNote(title, content, tags, {});
     }
 
-    Note get_note(std::string title, bool visible = false) {
+    const NoteData& getNote(const NoteId& id) const {return data.at(id);}
+    NoteData& getNote(const NoteId& id) {return data.at(id);}
+    const NoteData& getNote(const std::string& title) const {
+        NoteId id = getId(title);
+        return getNote(id);
+    }
+    NoteData& getNote(const std::string& title) {
+        NoteId id = getId(title);
+        return getNote(id);
+    }
+
+    NoteDataStrings getNoteStrings(const NoteId& id) {
+        std::string title;
         std::string content;
         std::vector<std::string> tags;
-        std::vector<std::string> offspring;
-        if (const auto& search = data.find(title); search != data.end()) {
+        std::vector<std::string> kids;
+        if (const auto& search = data.find(id); search != data.end()) {
+            title = search->second.title;
             content = search->second.content;
-            tags = search->second.tags;
+            for (const auto& tag: search->second.tags) tags.emplace_back(getNote(tag).title);
+            for (const auto& kid: search->second.kids) tags.emplace_back(getNote(kid).title);
         }
-        if (const auto& search = children.find(title); search != children.end()) {
-            offspring = search->second;
-        }
-        return {title, content, tags, offspring, visible};
+        return {title, content, tags, kids};
     }
 
-    void add_note(std::string title,
-                  std::string content,
-                  std::vector<std::string> tags) {
-        data[title] = {content, tags};
+    NoteDataStrings getNoteStrings(const std::string& title) {
+        NoteId id = getId(title);
+        return getNoteStrings(id);
+    }
+
+    void addNote(std::string title,
+                 std::string content,
+                 std::vector<std::string> tags,
+                 std::vector<std::string> kids) {
+        NoteId id = getId(title);
+        LOG_DEBUG() << "adding note: " << title << ", id: " << id;
+
+        //convert tags and kids into NoteIds
+        std::vector<NoteId> tag_ids;
+        for (const auto& tag : tags) tag_ids.emplace_back(getId(tag));
+        std::vector<NoteId> kid_ids;
+        for (const auto& kid: kids) kid_ids.emplace_back(getId(kid));
+        data[id] = NoteData{title, content, tag_ids, kid_ids};
+
+        // add 'this' as a kid to its tags
+        NoteId tag_id;
         for (const auto& tag : tags) {
-            children[tag].emplace_back(title);
+            tag_id = getId(tag);
+            data[tag_id].kids.emplace_back(id);
+            LOG_DEBUG() << "added: " << id << ", as a kid to note: " << getNote(tag_id).title;
+            LOG_DEBUG() << "kids[0]: " << getNote(tag_id).kids[0];
         }
     }
 
-    void update_note(const std::string& old_title,
-                     const std::string& new_title,
-                     const std::string& content,
-                     const std::vector<std::string>& tags) {
-        if ((old_title == new_title) && (data[old_title].content == content) && (data[old_title].tags) == tags) {
+    void updateNote(const NoteId id,
+                    const std::string& new_title,
+                    const std::string& content,
+                    const std::vector<std::string>& tags,
+                    const std::vector<std::string>& kids) {
+        auto& note = getNote(id);
+        bool title_changed = (note.title != new_title ? true : false);
+
+        std::vector<NoteId> tag_ids;
+        for (const auto& tag : tags) tag_ids.emplace_back(getId(tag));
+        std::vector<NoteId> kid_ids;
+        for (const auto& kid : kids) kid_ids.emplace_back(getId(kid));
+        // check if new data is exactly the same as the old
+        if ((note.title == new_title) && (note.content == content) && 
+            (note.tags == tag_ids) && (note.kids == kid_ids)) {
             return;
         }
 
-        data.erase(old_title);
-        data[new_title] = {content, tags};
-        LOG_DEBUG() << "update_note: \n" << data[new_title];
+        LOG_DEBUG() << "update_note: \n" << data[id];
         // update the children of a tag, removing old_title, adding the new_title
-        for (const auto& tag : tags) {
-            // if (children.find(tag) == children.end())
-
-            // continue;
-            auto it = std::find(children[tag].begin(), children[tag].end(), old_title);
-            if (it != children.at(tag).end()) {
-                std::iter_swap(it, children[tag].end() - 1); // Move target to end
-                children[tag].pop_back();                    // Remove it
+        if (title_changed) {
+            for (const auto& tag_id : tag_ids) {
+                auto it = std::find(data[tag_id].kids.begin(), data[tag_id].kids.end(), id);
+                if (it != data.at(tag_id).kids.end()) {
+                    std::iter_swap(it, data[tag_id].kids.end() - 1); // Move target to end
+                    data[tag_id].kids.pop_back();                    // Remove it
+                }
+                data[tag_id].kids.emplace_back(id);
             }
-            children[tag].emplace_back(new_title);
         }
+        data[id] = {new_title, content, tag_ids, kid_ids};
+    }
+
+    std::vector<NoteId>& getKids(std::string title) {
+        LOG_DEBUG() << "getting kids from: " << getNote(title).title << " kids size: " << getNote(title).kids.size();
+        return getNote(title).kids;
     }
 };
 
