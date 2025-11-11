@@ -65,7 +65,7 @@ public:
                 }
             }
         }
-        store.save_json_file("notes.json");
+        store.save_json_file(opts_.storage_path);
         return renderer.tearDown();
     }
 };
