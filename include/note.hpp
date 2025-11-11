@@ -37,9 +37,9 @@ struct NoteDataStrings {
     std::vector<std::string> kids{};
 };
 
-std::ostream& operator<<(std::ostream& os, const NoteData& note) {
+std::ostream& operator<<(std::ostream& os, const NoteDataStrings& note) {
     std::string tags;
-    for(auto& tag: note.tags) tags += tag + ", ";
+    for(const auto& tag: note.tags) tags += tag + ", ";
     std::string kids;
     for(auto& kid: note.kids) kids += kid + ", ";
     return os << "Title: " << note.title << "\n"
@@ -111,17 +111,56 @@ public:
 
             this_id = getId(title);
             std::vector<NoteId> tag_ids;
-            for (const auto& tag : tags) tag_ids.emplace_back(getId(tag));
-            data[this_id] = NoteData{title, content, tag_ids, {}};
+            for (const auto& tag : tags) {
+                tag_ids.emplace_back(getId(tag));
+            }
+            auto [it, inserted] = data.try_emplace(this_id);
+            auto& n = it->second;
+            n.title = title;
+            n.content = content;
+            n.tags = tag_ids;
             title_to_id[title] = this_id;
+            LOG_DEBUG() << "imported note: \n" << getNoteStrings(this_id);
             // add this title to the tags' kids
             for (const auto& tag : tags) {
+                LOG_DEBUG() << "adding " << title << " as a kid to " << tag;
                 NoteId tag_id = getId(tag);
                 data[tag_id].kids.emplace_back(this_id);
             }
         }
 
         return true;
+    }
+
+    void save_json_file(std::string json_file) {
+        std::ofstream outfile(json_file);
+        if (!outfile.is_open()) {
+            LOG_ERROR() << "Could not open file for writing!\n";
+            return;
+        }
+
+        nlohmann::json json_array = nlohmann::json::array();
+        for (const auto& value : data) {
+             nlohmann::json json_note = {
+                {"title", value.second.title},
+                {"content", value.second.content},
+            };
+
+            std::vector<std::string> tags;
+            NoteData tag;
+            for (const auto& tag_id : value.second.tags) {
+                tag = getNote(tag_id);
+                tags.emplace_back(tag.title);
+            }
+            json_note["tags"] = tags;
+
+            json_array.push_back(json_note);
+        }
+
+        outfile << std::setw(2) << json_array;
+        if (!outfile) {
+            LOG_ERROR() << "Write failed\n";
+        }
     }
 
     /**
@@ -206,7 +245,7 @@ public:
             return;
         }
 
-        LOG_DEBUG() << "update_note: \n" << data[id];
+        LOG_DEBUG() << "update_note: \n" << getNoteStrings(id);
         // update the children of a tag, removing old_title, adding the new_title
         if (title_changed) {
             for (const auto& tag_id : tag_ids) {
