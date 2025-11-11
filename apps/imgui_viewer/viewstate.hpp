@@ -102,7 +102,7 @@ public:
         
         for (auto it = visible.begin(); it != visible.end(); ++it) {
             if (it->id == after_id) {
-                LOG_DEBUG() << "found after_id: " << after_id;
+                LOG_DEBUG() << "found after_id: " << after_id << ", inserting: " << id;
                 visible.insert(std::next(it), {id});
                 return;
             }

@@ -154,7 +154,7 @@ public:
             title = search->second.title;
             content = search->second.content;
             for (const auto& tag: search->second.tags) tags.emplace_back(getNote(tag).title);
-            for (const auto& kid: search->second.kids) tags.emplace_back(getNote(kid).title);
+            for (const auto& kid: search->second.kids) kids.emplace_back(getNote(kid).title);
         }
         return {title, content, tags, kids};
     }
